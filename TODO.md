@@ -1,0 +1,9 @@
+- Format and lint source code
+    - simple/hello.bash
+    - simple/hello.cpp
+    - simple/hello.swift
+- https://github.com/hedronvision/bazel-compile-commands-extractor
+    - https://github.com/kiron1/bazel-compile-commands/issues/86
+- .github/dependabot.yml
+    - https://blog.bazel.build/2026/02/20/dependabot.html
+- https://github.com/renovatebot/renovate

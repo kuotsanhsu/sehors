@@ -1,0 +1,1 @@
+int main(){char*s="int main(){char*s=%c%s%c;__builtin_printf(s,34,s,34);}";__builtin_printf(s,34,s,34);}

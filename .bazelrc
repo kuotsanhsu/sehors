@@ -1,0 +1,11 @@
+# https://bazel.build/run/bazelrc
+
+build --cxxopt=-std=c++23
+# export MACOSX_DEPLOYMENT_TARGET=$(xcrun --show-sdk-version)
+build --macos_minimum_os=26.5
+build --action_env=MACOSX_DEPLOYMENT_TARGET=26.5
+build --host_macos_minimum_os=26.5
+build --host_action_env=MACOSX_DEPLOYMENT_TARGET=26.5
+
+build:rust-analyzer --aspects=@rules_rust//rust:defs.bzl%rust_analyzer_aspect
+build:rust-analyzer --output_groups=rust_analyzer_crate_spec,rust_generated_srcs

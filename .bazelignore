@@ -1,0 +1,9 @@
+# https://adincebic.com/2026/04/19/a-better-way-to-ignore.html
+# https://bazel.build/rules/lib/globals/repo
+.git
+.github
+.vscode
+bazel-bin
+bazel-out
+bazel-sehors
+bazel-testlogs

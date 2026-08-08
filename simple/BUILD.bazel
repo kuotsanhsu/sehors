@@ -1,0 +1,112 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_swift//swift:swift_binary.bzl", "swift_binary")
+load("diff_test.bzl", "hello_test", "quine_test")
+
+sh_binary(
+    name = "hello-bash",
+    srcs = ["hello.bash"],
+)
+
+hello_test(
+    name = "hello-bash_test",
+    target = "hello-bash",
+)
+
+cc_binary(
+    name = "hello-c",
+    srcs = ["hello.c"],
+    copts = ["-std=c23"],
+)
+
+hello_test(
+    name = "hello-c_test",
+    target = "hello-c",
+)
+
+cc_binary(
+    name = "hello-cpp",
+    srcs = ["hello.cpp"],
+)
+
+hello_test(
+    name = "hello-cpp_test",
+    target = "hello-cpp",
+)
+
+rust_binary(
+    name = "hello-rs",
+    srcs = ["hello.rs"],
+)
+
+hello_test(
+    name = "hello-rs_test",
+    target = "hello-rs",
+)
+
+swift_binary(
+    name = "hello-swift",
+    srcs = ["hello.swift"],
+)
+
+hello_test(
+    name = "hello-swift_test",
+    target = "hello-swift",
+)
+
+sh_binary(
+    name = "quine-bash",
+    srcs = ["quine.bash"],
+)
+
+quine_test(
+    name = "quine-bash_test",
+    src = "quine.bash",
+    target = "quine-bash",
+)
+
+cc_binary(
+    name = "quine-c",
+    srcs = ["quine.c"],
+    copts = ["-std=c23"],
+)
+
+quine_test(
+    name = "quine-c_test",
+    src = "quine.c",
+    target = "quine-c",
+)
+
+cc_binary(
+    name = "quine-cpp",
+    srcs = ["quine.cpp"],
+)
+
+quine_test(
+    name = "quine-cpp_test",
+    src = "quine.cpp",
+    target = "quine-cpp",
+)
+
+rust_binary(
+    name = "quine-rs",
+    srcs = ["quine.rs"],
+)
+
+quine_test(
+    name = "quine-rs_test",
+    src = "quine.rs",
+    target = "quine-rs",
+)
+
+swift_binary(
+    name = "quine-swift",
+    srcs = ["quine.swift"],
+)
+
+quine_test(
+    name = "quine-swift_test",
+    src = "quine.swift",
+    target = "quine-swift",
+)
