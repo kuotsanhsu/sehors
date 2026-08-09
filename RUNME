@@ -1,0 +1,5 @@
+set -e
+mkdir build
+cd "$_"
+../configure
+make

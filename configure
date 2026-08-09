@@ -1,0 +1,5 @@
+set -e
+readonly ROOT="$(dirname "$0")"
+link "$ROOT/Makefile" Makefile
+echo "ROOT := $ROOT" > vars.mk
+mkdir simple
