@@ -1,0 +1,4 @@
+*.swp
+*.pass
+#exes
+cycle_detection
