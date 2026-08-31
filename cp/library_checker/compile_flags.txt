@@ -1,0 +1,5 @@
+-DDEBUG
+-std=c++23
+-Werror
+-Wall
+-Wextra

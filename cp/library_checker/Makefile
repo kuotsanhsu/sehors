@@ -1,6 +1,4 @@
-CXXFLAGS += -std=c++23
-CXXFLAGS += -O2
-#CXXFLAGS += -DDEBUG
+CXXFLAGS += @compile_flags.txt
 
 exes := $(shell sed '1,/^\#exes$$/d' .gitignore)
 

@@ -5,14 +5,14 @@
 #	define NDEBUG
 #endif
 
-#if defined(__clang__) && __has_feature(nullability)
-#else
-#	define _Nonnull
-#endif
+#include <cassert>
+#include <iterator>
+#include <iostream>
 
-#include <assert.h>
-#include <stdio.h>
+using edge = std::pair<int, int>;
+static_assert(sizeof(edge) == 8);
 
+/*
 union vertex;
 
 union edge {
@@ -28,7 +28,7 @@ union edge {
 		struct adj_list *adj_list;
 		struct dfs_stack *prev;
 	} dfs_stack;
-}; 
+};
 static_assert(sizeof(union edge) == 16);
 
 union vertex {
@@ -38,203 +38,137 @@ union vertex {
 static_assert(sizeof(union vertex) == 8);
 
 struct cycle {
-	unsigned length;
-	//union vertex *root;
+	int length;
 	struct edge::dfs_stack *dfs_stack;
 };
+*/
 
-[[nodiscard]] struct cycle
-cycle_detection(const unsigned n, const unsigned m, union edge edge[], union vertex vertex[]) {
-	assert((void*)edge < (void*)vertex);
-	for (unsigned i = 0; i != m; ++i) {
-		const auto e = edge + i;
-		assert(e->adj_list.vertex == e->target);
-		const auto v = e->source;
-		e->adj_list.next = v->adj_list;
-		v->adj_list = &e->adj_list;
+[[nodiscard]] constexpr int source(const int v) noexcept {return -v - 1;}
+
+[[nodiscard]] constexpr edge
+cycle_detection(const int n, const int m, edge edge[], int vertex[]) noexcept {
+	for (int i = 0; i++ != m;) {
+		const int u = edge[i].first;
+		edge[i].first = vertex[u];
+		vertex[u] = i;
 	}
-	
-	assert(fprintf(stderr, "adjacency list:\n"));
-	for (unsigned i = 0; i != n; ++i) {
-		assert(fprintf(stderr, "[%u]", i));
-		for (auto adj_list = vertex[i].adj_list; adj_list; adj_list = adj_list->next) {
-			assert(fprintf(stderr, " %ld", adj_list->vertex - vertex));
-		}
-		assert(fprintf(stderr, "\n"));
-	}
-
-	assert(fprintf(stderr, "dfs trace:\n"));
-	struct edge::dfs_stack *dfs_stack = nullptr;
-	for (unsigned i = 0; i != n; ++i) for (auto v = vertex + i, u = v;;) {
-		assert(fprintf(stderr, "[%ld->%ld]", u - vertex, v - vertex));
-		for (unsigned i = 0; i != n; ++i) {
-			const auto v = vertex[i];
-			if (v.adj_list == nullptr) assert(fprintf(stderr, " 0"));
-			else if (v.source < vertex) assert(fprintf(stderr, " *"));
-			else assert(fprintf(stderr, " %ld", v.source - vertex));
-		}
-		assert(fprintf(stderr, "\n"));
-
-		if (v->adj_list == nullptr) {
-			if (dfs_stack == nullptr) break;
-			const auto adj_list = dfs_stack->adj_list;
+	for (int dfs_stack = 0, i = 0; i != n; ++i) for (int v = i, u = v;;) {
+		if (vertex[v] == 0) {
+			if (dfs_stack == 0) break;
+			const int adj_list = edge[dfs_stack].first;
 			// TODO: free dfs_stack
-			if (adj_list == nullptr) {
+			if (adj_list == 0) {
 				v = u;
-				u = u->source;
-				v->adj_list = nullptr;
-				dfs_stack = dfs_stack->prev;
+				assert(vertex[u] < 0);
+				u = source(vertex[u]);
+				vertex[v] = 0;
+				dfs_stack = edge[dfs_stack].second;
 			} else {
-				v = adj_list->vertex;
-				const auto new_dfs_stack = &((union edge*)adj_list)->dfs_stack;
-				new_dfs_stack->prev = dfs_stack->prev;
-				dfs_stack = new_dfs_stack;
+				v = edge[adj_list].second;
+				edge[adj_list].second = edge[dfs_stack].second;
+				dfs_stack = adj_list;
 			}
-		} else if (v->source < vertex) {
-			const auto adj_list = v->adj_list;
-			v->source = u;
+		} else if (vertex[v] > 0) {
+			const int adj_list = vertex[v];
+			vertex[v] = source(u);
 			u = v;
-			v = adj_list->vertex;
-			const auto new_dfs_stack = &((union edge*)adj_list)->dfs_stack;
-			new_dfs_stack->prev = dfs_stack;
-			dfs_stack = new_dfs_stack;
+			v = edge[adj_list].second;
+			edge[adj_list].second = dfs_stack;
+			dfs_stack = adj_list;
 		} else {
-			unsigned cycle_length = 0;
-			const auto root = v->source = u;
-			struct edge::dfs_stack *q = nullptr, *p = dfs_stack;
+			vertex[v] = source(u);
+			const int root = u;
+			int cycle_length = 0, q = 0, p = dfs_stack;
 			do {
 				++cycle_length;
-				const auto r = p->prev;
-				p->prev = q;
+				const int r = edge[p].second;
+				edge[p].second = q;
 				q = p;
 				p = r;
-				u = u->source; /*
-				const auto w = u->source;
-				u->source = v;
-				v = u;
-				u = w;
-				//*/
+				u = source(vertex[u]);
 			} while (u != root);
 			// TODO: for (; p; p = p->prev) { /* free p */ }
-			assert(dfs_stack->prev == nullptr);
-			dfs_stack->prev = q;
-			return (struct cycle){.length=cycle_length, .dfs_stack=dfs_stack};
+			assert(edge[dfs_stack].second == 0);
+			edge[dfs_stack].second = q;
+			return {cycle_length, dfs_stack};
 		}
 	}
-	return (struct cycle){};
+	return {};
 }
 
-struct pair {
-	unsigned u, v;
-};
-static_assert(sizeof(struct pair) == 8);
-
-[[nodiscard]] bool
-test(const char *const name,
-	const unsigned n, const unsigned m, union edge edge[], union vertex vertex[],
-	const struct pair pair[], const bool acyclic
-) {
-	assert(fprintf(stderr, "=== %s ===\n", name));
+[[nodiscard]] constexpr bool
+cyclic(const int n, const int m, edge edge[], int vertex[],
+	std::input_iterator auto pair, std::output_iterator<int> auto output
+) noexcept {
 	assert(2 <= n);
 	assert(1 <= m);
-	assert((void*)nullptr < (void*)edge);
-	assert((void*)edge < (void*)vertex);
-	for (unsigned i = 0; i != m; ++i) {
-#ifndef NDEBUG
-		const auto u = pair[i].u, v = pair[i].v;
-#else
-		unsigned u, v;
-		scanf("%u %u", &u, &v);
-#endif
+	for (int i = 0; i++ != m;) {
+		const ::edge p = *pair++;
+		const auto [u, v] = p;
 		assert(0 <= u && u < n);
 		assert(0 <= v && v < n);
 		assert(u != v);
-		edge[i].source = vertex + u;
-		edge[i].target = vertex + v;
+		edge[i] = {u, v};
 	}
 
-	const auto cycle = cycle_detection(n, m, edge, vertex);
-	const auto empty_cycle = cycle.length == 0;
-	assert(empty_cycle == (cycle.dfs_stack == nullptr));
-	if (empty_cycle) {
-		printf("-1\n");
-		return acyclic;
+	auto [cycle_length, dfs_stack] = cycle_detection(n, m, edge, vertex);
+	if (cycle_length == 0) {
+		assert(dfs_stack == 0);
+		*output++ = -1;
+		return false;
 	}
-#ifndef NDEBUG
-	else if (acyclic) return false;
-	assert(empty_cycle == acyclic);
-#endif
+	assert(dfs_stack != 0);
 
-	auto cycle_length = cycle.length;
-	printf("%u\n", cycle_length);
-	auto p = cycle.dfs_stack;
-#ifndef NDEBUG
-	auto v = pair[(union edge*)p - edge].v;
-#endif
+	*output++ = cycle_length;
+	int p = dfs_stack;
 	do {
-		p = p->prev;
-		const auto i = (union edge*)p - edge;
-		printf("%ld\n", i);
-#ifndef NDEBUG
-		if (v != pair[i].u) return false;
-		v = pair[i].v;
-#endif
+		p = edge[p].second;
+		*output++ = p - 1;
 		--cycle_length;
-	} while (p != cycle.dfs_stack);
+	} while (p != dfs_stack);
 	assert(cycle_length == 0);
 	return true;
 }
 
-[[nodiscard]] bool sample1();
-[[nodiscard]] bool sample2();
-[[nodiscard]] bool sample3();
+namespace std {
+istream& operator>>(istream &is, edge &p) {return is >> p.first >> p.second;}
+}
 
 int main() {
-	assert(sample1());
-	assert(sample2());
-	assert(sample3());
-#ifndef NDEBUG
-	return 0;
-#endif
-	constexpr unsigned max_size = 500'000;
+	std::cin.tie(nullptr)->sync_with_stdio(false);
+	constexpr int max_size = 500'000;
 	static struct {
-		union edge edge[max_size];
-		union vertex vertex[max_size];
+		::edge edge[max_size + 1];
+		int vertex[max_size]{};
 	} zone;
-	unsigned n, m;
-	scanf("%u %u", &n, &m);
-	return !test(nullptr, n, m, zone.edge, zone.vertex, nullptr, true);
+	std::ostream_iterator<int> output(std::cout, "\n");
+	std::istream_iterator<edge> pair(std::cin);
+	const auto [n, m] = *pair++;
+	(void)cyclic(n, m, zone.edge, zone.vertex, pair, output);
 }
 
-bool
-sample1() {
-	constexpr unsigned n = 5, m = 7;
-	static struct {
-		union edge edge[m];
-		union vertex vertex[n];
+template<typename T> struct noop_output_iterator {
+	using iterator_category = std::output_iterator_tag;
+	using difference_type = std::ptrdiff_t;
+	constexpr noop_output_iterator& operator=(const T&) noexcept {return *this;}
+	constexpr noop_output_iterator& operator=(T&&) noexcept {return *this;}
+	constexpr noop_output_iterator& operator*() noexcept {return *this;}
+	constexpr noop_output_iterator& operator++() noexcept {return *this;}
+	constexpr noop_output_iterator operator++(int) const noexcept {return *this;}
+};
+
+static_assert(std::output_iterator<noop_output_iterator<int>, int>);
+
+template<int n, int m> [[nodiscard]] constexpr bool
+sample(const std::array<edge, m> pair) noexcept {
+	struct {
+		::edge edge[m + 1];
+		int vertex[n]{};
 	} zone;
-	constexpr struct pair pair[m] = {{0, 3}, {0, 4}, {4, 2}, {4, 3}, {4, 0}, {2, 1}, {1, 0}};
-	return test(__func__, n, m, zone.edge, zone.vertex, pair, false);
+	noop_output_iterator<int> output;
+	return cyclic(n, m, zone.edge, zone.vertex, pair.begin(), output);
 }
 
-bool
-sample2() {
-	constexpr unsigned n = 2, m = 1;
-	static struct {
-		union edge edge[m];
-		union vertex vertex[n];
-	} zone;
-	constexpr struct pair pair[m] = {{1, 0}};
-	return test(__func__, n, m, zone.edge, zone.vertex, pair, true);
-}
-
-bool
-sample3() {
-	constexpr unsigned n = 4, m = 6;
-	static struct {
-		union edge edge[m];
-		union vertex vertex[n];
-	} zone;
-	constexpr struct pair pair[m] = {{0, 1}, {1, 2}, {2, 0}, {0, 1}, {1, 3}, {3, 0}};
-	return test(__func__, n, m, zone.edge, zone.vertex, pair, false);
-}
+static_assert(sample<5, 7>(std::array<edge, 7>{{{0, 3}, {0, 4}, {4, 2}, {4, 3}, {4, 0}, {2, 1}, {1, 0}}}));
+static_assert(!sample<2, 1>(std::array<edge, 1>{{{1, 0}}}));
+static_assert(sample<4, 6>(std::array<edge, 6>{{{0, 1}, {1, 2}, {2, 0}, {0, 1}, {1, 3}, {3, 0}}}));
