@@ -7,10 +7,10 @@ all: $(exes)
 txts := $(wildcard .*.txt)
 test: $(txts:.txt=.pass)
 clean:
-	$(RM) .*.pass \
+	$(RM) .*.pass .*.log \
 	$(exes)
 
 .SECONDEXPANSION:
 .%.pass: .%.txt $$(basename $$*)
-	./$(lastword $^) < $^
-	@touch $@
+	./$(lastword $^) < $^ | tee .$*.log
+	@git diff --exit-code .$*.log

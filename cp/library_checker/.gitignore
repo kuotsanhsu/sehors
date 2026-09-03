@@ -1,4 +1,7 @@
 *.swp
 *.pass
+*.log
 #exes
 cycle_detection
+scc
+aho_corasick
