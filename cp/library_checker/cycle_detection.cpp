@@ -1,11 +1,13 @@
 // make CXXFLAGS='-std=c++23 -g -DDEBUG' cycle_detection && ./cycle_detection
 // make CXXFLAGS='-std=c++23 -O2' cycle_detection &&
 // 	for i in {1..3}; do ./cycle_detection < sample$i.txt; done
-// #define DEBUG
-#ifdef DEBUG
+#pragma GCC optimize("O3")
+
+// #define	DEBUG
+#ifdef	DEBUG
 #	include <algorithm>
 #else
-#	define NDEBUG
+#	define	NDEBUG
 #endif
 
 #include <cassert>
@@ -33,12 +35,14 @@ struct edge {
 	};
 };
 */
-using edge_t = std::pair<int, int>;
+struct edge_t {
+	int first, second;
+};
 
 [[nodiscard]] constexpr int source(const int v) noexcept {return -v - 1;}
 
 [[nodiscard]] constexpr int cycle_detection(edge_t edge[], int vertex[]) noexcept {
-	const auto [n, m] = edge[0];
+	const auto [n, m] = *edge;
 	assert(2 <= n);
 	assert(1 <= m);
 	for (int i = 0; i++ != m;) {
@@ -70,7 +74,7 @@ using edge_t = std::pair<int, int>;
 			v = std::exchange(edge[adj_list].second, dfs_stack);
 			dfs_stack = adj_list;
 		} else {
-			edge[0] = {0, dfs_stack};
+			*edge = {0, dfs_stack};
 			int cycle_length = 1;
 			for (;u != v; u = source(vertex[u])) ++cycle_length;
 			return cycle_length;
@@ -79,29 +83,20 @@ using edge_t = std::pair<int, int>;
 	return 0;
 }
 
-[[nodiscard]] std::string_view read_file(const int fd) noexcept {
-	constexpr int mmap_flags = MAP_SHARED
-#ifdef MAP_POPULATE
-		| MAP_POPULATE
-#endif
-#ifdef MAP_RESILIENT_CODESIGN
-		| MAP_RESILIENT_CODESIGN
-#endif
-#ifdef MAP_RESILIENT_MEDIA
-		| MAP_RESILIENT_MEDIA
-#endif
-	;
+[[nodiscard]] constexpr std::string_view read_file(const int fd) noexcept {
 	struct ::stat stat;
 	if (::fstat(fd, &stat) == -1) return {};
 	const std::size_t data_size = stat.st_size;
 	if (data_size == 0) return {};
-	void *const data = ::mmap(nullptr, data_size, PROT_READ, mmap_flags, fd, 0);
+#ifdef	__APPLE__
+#define	MAP_POPULATE MAP_FILE
+#endif
+	void *const data = ::mmap(nullptr, data_size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, fd, 0);
 	if (data == MAP_FAILED) return {};
-	::madvise(data, data_size, MADV_SEQUENTIAL); // hint-only; don't care about failure
 	return {static_cast<const char*>(data), data_size};
 }
 
-void read_ints(std::span<int> is, std::string_view s) noexcept {
+constexpr void read_ints(std::span<int> is, std::string_view s) noexcept {
 	auto i = is.begin();
 	bool fresh = true; // -Wunused-but-set-variable MUST warn if NDEBUG
 	for (int n = 0; const char c : s) {
@@ -145,7 +140,7 @@ public:
 		return true;
 	}
 
-	[[nodiscard]] int flush() noexcept {
+	[[nodiscard]] constexpr int flush() noexcept {
 		assert(c <= last);
 		while (first != c) {
 			assert(first < c);
@@ -176,29 +171,40 @@ public:
 	return total + (upper_bound - a) * digits;
 }
 
-int main() {
+int main() noexcept {
 	constexpr std::size_t max_size = 500'000, edge_size = max_size + 1;
-	static constinit union {
-		edge_t edge[edge_size];
-		int is[edge_size * 2];
-		char output[edge_size * 8];
+	alignas(1 << 21) static constinit struct {
+		union {
+			edge_t edge[edge_size];
+			int is[edge_size * 2];
+			char output[edge_size * 8];
+		}; // CAN be completely uninitialized
+		int vertex[max_size]{}; // MUST be completely cleared for correctness
 	} storage{};
 	static_assert(sizeof(storage.edge) == sizeof(storage.is));
 	static_assert(sizeof(storage.is) == sizeof(storage.output));
 	constexpr std::size_t total_digits = total_digits_before(500'000);
 	static_assert(total_digits == 2'888'890);
 	static_assert(sizeof(storage.output) >= 6 + 1 + total_digits + max_size);
+
+#ifdef	__APPLE__
+#define	MADV_HUGEPAGE MADV_NORMAL
+#define	MADV_POPULATE_WRITE MADV_NORMAL
+#endif
+	::madvise(&storage, sizeof(storage), MADV_HUGEPAGE);
+	::madvise(&storage, sizeof(storage), MADV_POPULATE_WRITE);
 	read_ints(storage.is, read_file(STDIN_FILENO));
-	edge_t *edge = storage.edge;
-	const auto [n, m] = *edge;
-	static constinit int vertex[max_size]{};
+	edge_t *const edge = storage.edge;
+	const auto [n, m] = *edge; // -Wunused-but-set-variable MUST warn if NDEBUG
+	int *const vertex = storage.vertex;
 	const int cycle_length = cycle_detection(edge, vertex);
 	write_ints println(storage.output);
 	if (cycle_length == 0) {
-		assert(*edge == std::make_pair(n, m));
+		assert(edge->first == n && edge->second == m);
 		if (!println(-1)) return 1;
 	} else {
 		assert(0 < cycle_length && cycle_length <= std::min(n, m));
+		assert(0 <= edge->first && edge->first < m);
 		for (int dfs_stack = edge->second, i = 0; i != cycle_length; ++i) {
 			assert(0 < dfs_stack && dfs_stack <= m);
 			vertex[i] = dfs_stack;
@@ -211,7 +217,7 @@ int main() {
 	return 0;
 }
 
-#ifdef DEBUG
+#ifdef	DEBUG
 template<int n, int m>
 [[nodiscard]] constexpr bool cyclic(std::span<const edge_t, m> pair) noexcept {
 	edge_t edge[m + 1] = {{n, m},};
