@@ -1,7 +1,7 @@
 // make CXXFLAGS='-std=c++23 -g -DDEBUG' cycle_detection && ./cycle_detection
 // make CXXFLAGS='-std=c++23 -O2' cycle_detection &&
 // 	for i in {1..3}; do ./cycle_detection < sample$i.txt; done
-#pragma GCC optimize("O3")
+#pragma GCC optimize("Ofast")
 
 // #define	DEBUG
 #ifdef	DEBUG
@@ -127,7 +127,8 @@ public:
 	constexpr write_ints(std::span<char> buffer) noexcept
 		: first(buffer.data()), c(first), last(first + buffer.size()) {}
 
-	[[nodiscard]] constexpr bool operator()(const int value) noexcept {
+	[[nodiscard, gnu::always_inline, gnu::no_stack_protector]] constexpr bool
+	operator()(const int value) noexcept {
 		const auto [ptr, ec] = std::to_chars(c, last, value);
 		if (ec == std::errc::value_too_large) [[unlikely]] {
 			assert(ptr == last);
@@ -171,7 +172,7 @@ public:
 	return total + (upper_bound - a) * digits;
 }
 
-int main() noexcept {
+[[gnu::no_stack_protector]] int main() noexcept {
 	constexpr std::size_t max_size = 500'000, edge_size = max_size + 1;
 	alignas(1 << 21) static constinit struct {
 		union {
