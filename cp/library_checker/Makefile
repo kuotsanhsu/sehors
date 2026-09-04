@@ -14,3 +14,4 @@ clean:
 .%.pass: .%.txt $$(basename $$*)
 	./$(lastword $^) < $^ | tee .$*.log
 	@git diff --exit-code .$*.log
+	@touch $@
