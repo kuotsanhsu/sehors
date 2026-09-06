@@ -6,7 +6,7 @@
 
 #include <cassert>
 #include <iostream>
-#include <map>
+#include <unordered_map>
 
 int main() {
 	std::cin.tie(nullptr)->sync_with_stdio(false);
@@ -15,7 +15,7 @@ int main() {
 	int Q;
 	std::cin >> Q;
 	assert(1 <= Q and Q <= query_limit);
-	for (std::map<long long, long long> m; Q--;) {
+	for (std::unordered_map<long long, long long> m; Q--;) {
 		char c;
 		long long k;
 		std::cin >> c >> k;
