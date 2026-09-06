@@ -1,6 +1,3 @@
-#include <charconv>
-#include <cstdio>
-#include <print>
 #pragma GCC optimize "Ofast"
 
 #ifndef	DEBUG
@@ -10,6 +7,9 @@
 
 #include <cassert>
 #include <string_view>
+#include <charconv>
+#include <print>
+#include <algorithm>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -43,28 +43,30 @@ int main() {
 	constexpr int query_limit = 1'000'000;
 	constexpr key_value_t key_value_limit = 1'000'000'000'000'000'000;
 	int Q;
-	auto c = std::from_chars(input, last, Q).ptr; // TODO: SWAR or AVX2: *c & '0'
+	auto a = std::from_chars(input, last, Q).ptr; // TODO: SWAR or AVX2: *c & '0'
 	assert(1 <= Q and Q <= query_limit);
 	assert((std::println(stderr, "{}", Q), true));
 	
 	constexpr int table_size = 1 << 20, table_mask = table_size - 1;
 	static_assert(query_limit <= table_size);
-	static constinit key_value_t key_table[table_size]{};
-	static constinit int value_table[table_size];
+	static key_value_t key_table[table_size]{};
+	static int value_table[table_size];
+	static char output[20 * query_limit];
+	auto b = output;
 	while (Q--) {
-		assert(*c == '\n');
-		assert(c[2] == ' ');
-		const auto first = c += 3;
+		assert(*a == '\n');
+		assert(a[2] == ' ');
+		const auto first = a += 3;
 		key_value_t k;
-		c = std::from_chars(first, last, k).ptr;
+		a = std::from_chars(first, last, k).ptr;
 		assert(0 <= k and k <= key_value_limit);
 		assert((std::print(stderr, "{} {}", first[-2], k), true));
 		auto i = splitmix64(++k) & table_mask;
-		if (*c == ' ') {
+		if (*a == ' ') {
 			assert(first[-2] == '0');
-			const auto first = ++c;
+			const auto first = ++a;
 			key_value_t v;
-			c = std::from_chars(first, last, v).ptr;
+			a = std::from_chars(first, last, v).ptr;
 			assert(0 <= v and v <= key_value_limit);
 			assert((std::println(stderr, " {}", v), true));
 			for (;; ++i, i &= table_mask) {
@@ -78,7 +80,7 @@ int main() {
 			const auto offset = first - input;
 			assert(offset < (1 << 26));
 			static_assert(26 < (1 << 5));
-			const auto length = c - first;
+			const auto length = a - first;
 			assert(length < (1 << 5));
 			static_assert(26 + 5 < 32);
 			value_table[i] = (offset << 5) | length;
@@ -89,16 +91,21 @@ int main() {
 				const auto kk = key_table[i];
 				if (kk == 0) {
 					assert(value_table[i] == 0);
-					std::println("0");
+					constexpr std::string_view s = "0\n";
+					b = std::ranges::copy(s, b).out;
 					break;
 				} else if (kk == k) {
 					const auto v = value_table[i];
 					assert(v != 0);
-					const std::string_view s(input + (v >> 5), v & 31);
-					std::println("{}", s);
+					const auto offset = v >> 5;
+					const auto length = v & 31;
+					assert(input[offset + length] == '\n');
+					const std::string_view s(input + offset, length + 1);
+					b = std::ranges::copy(s, b).out;
 					break;
 				}
 			}
 		}
 	}
+	::write(STDOUT_FILENO, output, b - output);
 }
