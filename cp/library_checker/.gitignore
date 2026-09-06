@@ -2,6 +2,7 @@
 *.pass
 *.log
 #exes
+associative_array
 cycle_detection
 scc
 aho_corasick
