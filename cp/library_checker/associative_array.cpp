@@ -49,9 +49,24 @@ int main() {
 	
 	constexpr int table_size = 1 << 20, table_mask = table_size - 1;
 	static_assert(query_limit <= table_size);
-	static key_value_t key_table[table_size]{};
-	static int value_table[table_size];
-	static char output[20 * query_limit];
+#ifndef	MADV_HUGEPAGE
+#define	MADV_HUGEPAGE MADV_NORMAL
+#else
+	alignas(1 << 21)
+#endif
+	static struct {
+		key_value_t key_table[table_size]{};
+		int value_table[table_size];
+		char output[20 * query_limit];
+	} storage;
+	::madvise(&storage, sizeof(storage), MADV_HUGEPAGE);
+#ifndef	MADV_POPULATE_WRITE
+#define	MADV_POPULATE_WRITE MADV_NORMAL
+#endif
+	::madvise(&storage, sizeof(storage), MADV_POPULATE_WRITE);
+	auto key_table = storage.key_table;
+	auto value_table = storage.value_table;
+	auto output = storage.output;
 	auto b = output;
 	while (Q--) {
 		assert(*a == '\n');
