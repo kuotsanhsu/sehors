@@ -1,0 +1,13 @@
+{
+	"[jsonc]": {
+		"editor.codeActionsOnSave": {
+			"source.sort.json": "explicit"
+		},
+		"editor.insertSpaces": false,
+		"editor.tabSize": 4,
+		"files.insertFinalNewline": true
+	},
+	"[rust]": {
+		"editor.formatOnSave": true
+	}
+}

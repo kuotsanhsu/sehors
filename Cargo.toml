@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "qf-idl",
+]
+resolver = "2"
