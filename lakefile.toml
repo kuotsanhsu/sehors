@@ -1,0 +1,12 @@
+name = "sehors"
+version = "0.1.0"
+defaultTargets = [
+    "Graph"
+]
+
+[leanOptions]
+autoImplicit = false
+relaxedAutoImplicit = false
+
+[[lean_lib]]
+name = "Graph"

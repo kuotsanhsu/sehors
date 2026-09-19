@@ -7,7 +7,13 @@
 		"editor.tabSize": 4,
 		"files.insertFinalNewline": true
 	},
+	"[lean4]": {
+		"editor.rulers": [
+			100
+		]
+	},
 	"[rust]": {
 		"editor.formatOnSave": true
-	}
+	},
+	"lean4.infoview.autoOpen": false
 }
