@@ -78,19 +78,16 @@ structure FinGraph (n m : Nat) where
   adjList : Vector (List (Fin n)) n
   size_adjList : (adjList.map List.length).sum = m
 
-#check Vector.size_toArray
-example {n} {xs : Vector Nat n} : xs.sum = xs.toArray.foldr (· + ·) 0 := rfl
-
 namespace FinGraph
 
 variable {n m : Nat}
 
-def toRelation (G : FinGraph n m) (u v : Fin n) : Prop := v ∈ G.adjList[u]
+def toRelation (G : FinGraph n m) (u v : Fin n) : Prop := v ∈ G.adjList.get u
 
 def toGraph (G : FinGraph n m) : Graph := .ofRelation G.toRelation
 
-private def addEdge (adjList : Vector (List (Fin n)) n) : Fin n × Fin n → Vector (List (Fin n)) n
-  | (u, v) => adjList.set u (v :: adjList[u])
+def addEdge (adjList : Vector (List (Fin n)) n) : Fin n × Fin n → Vector (List (Fin n)) n
+  | (u, v) => adjList.set u (v :: adjList.get u)
 
 def fromEdges (edges : Vector (Fin n × Fin n) m) : FinGraph n m where
   adjList := edges.foldl addEdge default
@@ -102,21 +99,19 @@ def fromEdges (edges : Vector (Fin n × Fin n) m) : FinGraph n m where
     have hf (i : Fin edges.toArray.size) (adjList : AdjList) (h : (adjList.map List.length).sum = i) :
         ((addEdge adjList edges[i]).map List.length).sum = i + 1 :=
       let (u, v) := edges[i]
-      let xs := adjList[u]
-      let ys := v :: xs
-      let p := xs.length
-      let q := ys.length
-      let as := adjList.map List.length
-      have : as.get u = p := Vector.getElem_map List.length u.isLt
+      let vs := adjList.get u
+      let k := vs.length
+      let ks := adjList.map List.length
+      have : ks.get u = k := Vector.getElem_map List.length u.isLt
       have :=
-        calc p + (as.set u q).sum
-         _ = as.get u + (as.set u q).sum := congrArg (· + _) this.symm
-         _ = q + as.sum := as.get_add_set_sum
-         _ = p + 1 + i := congrArg q.add h
-         _ = p + i + 1 := Nat.succ_add ..
-      calc ((adjList.set u ys).map List.length).sum
-       _ = (as.set u q).sum := congrArg Vector.sum Vector.map_set
-       _ = i + 1 := Nat.add_left_cancel this
+        calc k + (ks.set u k.succ).sum
+         _ = ks.get u + (ks.set u k.succ).sum := congrArg (· + _) this.symm
+         _ = k + 1 + ks.sum := ks.get_add_set_sum
+         _ = k + ks.sum + 1 := k.succ_add _
+      calc ((adjList.set u (v :: vs)).map List.length).sum
+       _ = (ks.set u k.succ).sum := congrArg Vector.sum Vector.map_set
+       _ = ks.sum + 1 := k.add_left_cancel this
+       _ = i + 1 := congrArg Nat.succ h
     trans (edges.toArray.foldl_induction motive h0 hf) edges.size_toArray
 
 end FinGraph
