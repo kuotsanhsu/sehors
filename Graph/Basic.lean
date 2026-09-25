@@ -34,29 +34,15 @@ namespace Graph
 
 variable {G : Graph}
 
-inductive Reachable : G.V → G.V → Prop
-  | adj e : Reachable (G.src e) (G.dst e)
-  | cons e {w} : Reachable (G.dst e) w → Reachable (G.src e) w
+def adjacent (u v : G.V) : Prop := ∃ e, u = G.src e ∧ G.dst e = v
 
-theorem Reachable.trans {u v w: G.V} : Reachable u v → Reachable v w → Reachable u w
-  | adj e, q => cons e q
-  | cons e p, q => cons e (p.trans q)
+def Reachable := Relation.TransGen G.adjacent
 
-def Cyclic (G : Graph) : Prop := ∃ u v : G.V, Reachable u v ∧ Reachable v u
+example {u v w : G.V} : Reachable u v → Reachable v w → Reachable u w := Relation.TransGen.trans
 
-class DAG (G : Graph) where
-  acyclic : ¬G.Cyclic
+class DAG (G : Graph) extends Std.Asymm G.Reachable
 
-section
-
-variable [DAG G]
-
-instance : Std.Asymm G.Reachable where
-  asymm u v p q := DAG.acyclic ⟨u, v, p, q⟩
-
-example : Std.Irrefl G.Reachable := Std.instIrreflOfAsymm G.Reachable
-
-end
+example [DAG G] : Std.Irrefl G.Reachable := Std.instIrreflOfAsymm G.Reachable
 
 section
 
@@ -73,14 +59,12 @@ example (f : V → V) : Graph := ofRelation (f · = ·)
 
 variable {r : V → V → Prop} [Trans r r r]
 
-theorem Reachable.toRelation {u v : V} : (ofRelation r).Reachable u v → r u v :=
-  letI G := ofRelation r
-  fun
-  | @adj G e => e.property
-  | @cons G e _ p => Trans.trans e.property p.toRelation
+theorem Reachable.toRelation {u v : V} : (ofRelation r).Reachable u v → r u v
+  | .single ⟨e, p, q⟩ => trans (trans p e.property) q
+  | .tail p ⟨e, q, rfl⟩ => trans (trans (toRelation p) q) e.property
 
 instance [Std.Asymm r] : DAG (ofRelation r) where
-  acyclic | ⟨u, v, p, q⟩ => Std.Asymm.asymm u v p.toRelation q.toRelation
+  asymm u v p q := Std.Asymm.asymm u v p.toRelation q.toRelation
 
 example [lt : LT V] [LE V] [Std.LawfulOrderLT V] [Std.IsPreorder V] : DAG (ofRelation lt.lt) :=
   inferInstance
