@@ -115,3 +115,113 @@ def fromEdges (edges : Vector (Fin n × Fin n) m) : FinGraph n m where
     trans (edges.toArray.foldl_induction motive h0 hf) edges.size_toArray
 
 end FinGraph
+
+abbrev noop {α μ} [Pure μ] : α → μ Unit | _ => pure ()
+
+class Graph.DfsVisitor (G : Graph) (μ) [Pure μ] where
+  /-- picked as root -/
+  startVertex : G.V → μ Unit := noop
+  /-- unvisited → discovered -/
+  discoverVertex : G.V → μ Unit := noop
+  /-- discovered → finished -/
+  finishVertex : G.V → μ Unit := noop
+  /-- relaxing an edge -/
+  examineEdge : G.E → μ Unit := noop
+  /-- (discovered, unvisited) -/
+  treeEdge : G.E → μ Unit := noop
+  /-- (discovered, discovered) -/
+  backEdge : G.E → μ Unit := noop
+  /-- (discovered, finished) -/
+  forwardOrCrossEdge : G.E → μ Unit := noop
+
+namespace FinGraph
+
+inductive DfsState | unvisited | discovered | finished
+deriving DecidableEq
+
+def DfsStateMap := Vector DfsState
+
+namespace DfsStateMap
+
+variable {n} (s : DfsStateMap n)
+
+def unvisitedCount := s.count .unvisited
+
+def Progression := Subtype (@unvisitedCount n · < s.unvisitedCount)
+
+variable (v : Fin n)
+
+def discover (h : s.get v = .unvisited) : s.Progression :=
+  let val : DfsStateMap n := s.set v .discovered
+  suffices property : val.unvisitedCount < s.unvisitedCount from {val, property}
+  suffices val.unvisitedCount + 1 = s.unvisitedCount from Nat.le_of_eq this
+  let k := s.unvisitedCount
+  have :=
+    calc val.unvisitedCount
+     _ = k - if s.get v == .unvisited then 1 else 0 := s.count_set v.isLt
+     _ = k - 1 := by rw [h]; rfl
+  calc val.unvisitedCount + 1
+   _ = k - 1 + 1 := congrArg Nat.succ this
+   _ = k := k.succ_pred_eq_of_pos (s.count_pos_iff.mpr (s.mem_of_getElem h))
+
+def finish (p : s.Progression) : s.Progression :=
+  let val : DfsStateMap n := p.val.set v .finished
+  suffices property : val.unvisitedCount < s.unvisitedCount from {val, property}
+  let k := p.val.unvisitedCount
+  calc val.unvisitedCount
+   _ = k - if p.val.get v == .unvisited then 1 else 0 := p.val.count_set v.isLt
+   _ ≤ k := by simp
+   _ < s.unvisitedCount := p.property
+
+end DfsStateMap
+
+variable {n m} (G : FinGraph n m)
+variable {μ} [Monad μ] [visitor : G.toGraph.DfsVisitor μ]
+
+def dfs : μ Unit := do
+  let mut s : DfsStateMap n := .replicate n .unvisited
+  for h : i in [:n] do
+    let v : Fin n := ⟨i, h.upper⟩
+    if h : s.get v = .unvisited then
+      visitor.startVertex v
+      s := (← tree v s h).val
+where
+  tree (v : Fin n) (s : DfsStateMap n) (h : s.get v = .unvisited) : μ s.Progression := do
+    visitor.discoverVertex v
+    let mut p := s.discover v h
+    for h : w in G.adjList.get v do
+      let e : G.toGraph.E := ⟨(v, w), h⟩
+      visitor.examineEdge e
+      match h : p.val.get w with
+      | .finished => visitor.forwardOrCrossEdge e
+      | .discovered => visitor.backEdge e
+      | .unvisited =>
+        visitor.treeEdge e
+        let q ← tree w p.val h
+        p := ⟨q.val, Nat.lt_trans q.property p.property⟩
+    visitor.finishVertex v
+    return s.finish v p
+  termination_by s.unvisitedCount
+  decreasing_by exact p.property
+
+instance postorderVisitor : G.toGraph.DfsVisitor (StateM (Array (Fin n))) where
+  finishVertex v := modify fun vs => vs.push v
+
+def postorder : Vector (Fin n) n where
+  toArray := (G.dfs (visitor := G.postorderVisitor)).run (Array.emptyWithCapacity n) |>.snd
+  size_toArray := sorry
+
+theorem postorder_perm : G.postorder.Perm (.finRange n) :=
+  sorry
+
+theorem pairwise_postorder [G.toGraph.DAG] : G.postorder.toList.Pairwise (flip G.toRelation) :=
+  sorry
+
+theorem reverse_topsort [G.toGraph.DAG] : G.postorder.reverse.toList.Pairwise G.toRelation :=
+  sorry
+
+end FinGraph
+
+#check Array.pairwise_mergeSort
+#check List.Pairwise
+#check List.pairwise_reverse
