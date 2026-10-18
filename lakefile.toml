@@ -10,3 +10,6 @@ relaxedAutoImplicit = false
 
 [[lean_lib]]
 name = "Graph"
+
+[[lean_lib]]
+name = "SoftwareFoundations"
