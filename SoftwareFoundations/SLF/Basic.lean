@@ -33,11 +33,11 @@ inductive Trm
   | sub : Trm → Trm → Trm
 end
 
-instance : Coe Unit Val where coe _ := .unit
-instance : Coe Int Val where coe := .int
-instance : Coe Loc Val where coe := .loc
-instance : Coe Val Trm where coe := .val
-instance : Coe Var Trm where coe := .var
+instance : Coe Unit Val where coe _ := Val.unit
+instance : Coe Int Val where coe := Val.int
+instance : Coe Loc Val where coe := Val.loc
+instance : Coe Val Trm where coe := Trm.val
+instance : Coe Var Trm where coe := Trm.var
 
 abbrev Heap := Std.ExtTreeMap Loc Val
 namespace Heap
@@ -92,6 +92,8 @@ theorem empty_disjoint : Disjoint ∅ s₂
   | _, m₁, _ => nomatch m₁
 theorem empty_union : s₂ = ∅ ∪ s₂ :=
   Std.ExtTreeMap.empty_union.symm
+theorem union_get_right (m : p ∈ s₂) : (s₁ ∪ s₂).get p (mem_union_of_right m) = s₂.get p m :=
+  Std.ExtTreeMap.getElem_union_of_mem_right m
 
 end Heap
 
@@ -264,9 +266,9 @@ theorem triple_incr (p : Loc) (n : Int) :
     (.hsingle p n)
     fun _ => .hsingle p (n + 1 : Int)
 :=
-  let s := {(p, .int n)}
-  let m := n + 1
-  let Q _ := .hsingle p m
+  let s : Heap := {(p, Val.int n)}
+  let m : Int := n + 1
+  let Q _ : HProp := HProp.hsingle p m
   fun
   | _, rfl => suffices Eval Q (.let .n (.get p) <| .let .m (.n + 1) <| .set p .m) s from .app_fun this
   .let (fun v h => v = n ∧ h = s) (.get Heap.singleton_mem ⟨Heap.singleton_get, rfl⟩) fun
@@ -303,7 +305,7 @@ theorem triple_quadruple (n : Int) :
     .hempty
     fun r => .hpure (r = (4 * n: Int))
 :=
-  let m := n + n
+  let m : Int := n + n
   fun
   | _, rfl => .app_fun <| .let (fun v h => v = m ∧ h = ∅) (.add ⟨rfl, rfl⟩) fun
   | _, _, ⟨rfl, rfl⟩ => .add ⟨congrArg Val.int (show m + m = 4 * n by lia), rfl⟩
@@ -319,11 +321,11 @@ theorem triple_inplace_double (p : Loc) (n : Int) :
     (.hsingle p n)
     fun _ => .hsingle p (2 * n : Int)
 :=
-  let s := {(p, .int n)}
-  let m := n + n
+  let s : Heap := {(p, Val.int n)}
+  let m : Int := n + n
   fun
   | _, rfl => .app_fun <|
-    .let (fun v h => v = n ∧ h = s) (.get Heap.singleton_mem ⟨Heap.singleton_get, rfl⟩) fun
+  .let (fun v h => v = n ∧ h = s) (.get Heap.singleton_mem ⟨Heap.singleton_get, rfl⟩) fun
   | _, _, ⟨rfl, rfl⟩ => .let (fun v h => v = m ∧ h = s) (.add ⟨rfl, rfl⟩) fun
   | _, _, ⟨rfl, rfl⟩ => .set Heap.singleton_mem <| (show m = 2 * n by lia) ▸ Heap.singleton_insert
 
@@ -337,34 +339,36 @@ theorem triple_incr_two (p q : Loc) (m n : Int) :
 :=
   let x : Int := m + 1
   let y : Int := n + 1
-  let Q _ := .hsingle p x * .hsingle q y
+  let Q _ : HProp := HProp.hsingle p x * HProp.hsingle q y
   let f : Val := .fun .q <| .seq (.app incr p) (.app incr .q)
+  let s₁ : Heap := {(p, Val.int m)}
+  let s₂ : Heap := {(q, Val.int n)}
+  let s : Heap := s₁ ∪ s₂
   fun
-  | _, ⟨s₁, s₂, h₁, h₂, h, rfl⟩ => show Eval Q (.app (.app incr_two p) q) (s₁ ∪ s₂) from
-  .app₁ (fun v s => v = f ∧ s = s₁ ∪ s₂) id (.app_fun <| .fun ⟨rfl, rfl⟩) fun
-  | _, _, ⟨rfl, rfl⟩ => show Eval Q (.app f q) (s₁ ∪ s₂) from
-  .app_fun <| .seq (fun _ => .hsingle p x * .hsingle q n) (.frame₁ h h₂ <| triple_incr p m s₁ h₁) fun
-  | _, _, ⟨s₁, s₂, h₁, h₂, h, rfl⟩ => show Eval Q (.app incr q) (s₁ ∪ s₂) from
-  .frame₂ h h₁ <| triple_incr q n s₂ h₂
+  | _, ⟨_, _, rfl, rfl, h, rfl⟩ => show Eval Q (.app (.app incr_two p) q) s from
+  .app₁ (fun v h => v = f ∧ h = s) id (.app_fun <| .fun ⟨rfl, rfl⟩) fun
+  | _, _, ⟨rfl, rfl⟩ => show Eval Q (.app f q) s from .app_fun <|
+  .seq (fun _ => HProp.hsingle p x * HProp.hsingle q n) (.frame₁ h rfl <| triple_incr p m s₁ rfl) fun
+  | _, _, ⟨_, _, rfl, rfl, h, rfl⟩ => show Eval Q (.app incr q) ({(p, Val.int x)} ∪ s₂) from
+  .frame₂ h rfl <| triple_incr q n s₂ rfl
 
 theorem triple_incr_two_aliased (p : Loc) (n : Int) :
   Triple (.app (.app incr_two p) p)
     (.hsingle p n)
     fun _ => .hsingle p (n + 2 : Int)
 :=
-  let s : Heap := {(p, .int n)}
+  let s : Heap := {(p, Val.int n)}
   let f : Val := .fun .q <| .seq (.app incr p) (.app incr .q)
   fun
   | _, rfl => .app₁ (fun v h => v = f ∧ h = s) id (.app_fun <| .fun ⟨rfl, rfl⟩) fun
-  | _, _, ⟨rfl, rfl⟩ => .app_fun <| .seq (fun _ => .hsingle p (n + 1 : Int)) (
-    triple_incr _ _ _ <| show s = {(p, .int n)} from rfl
-  ) fun
-  | _, _, rfl =>
+  | _, _, ⟨rfl, rfl⟩ =>
   let n' : Int := n + 1
-  let s' : Heap := {(p, .int n')}
+  .app_fun <| .seq (fun _ => HProp.hsingle p n') (triple_incr _ _ _ rfl) fun
+  | _, _, rfl =>
+  let s' : Heap := {(p, Val.int n')}
   let n'' : Int := n' + 1
   have e : n + 2 = n'' := by lia
-  suffices Eval (fun _ => .hsingle p n'') (.app incr p) s' by rw [e]; exact this
+  suffices Eval (fun _ => HProp.hsingle p n'') (.app incr p) s' by rw [e]; exact this
   triple_incr p n' s' rfl
 
 def aliased_call : Val :=
@@ -396,11 +400,11 @@ theorem triple_incr_first' (p q : Loc) (m : Int) :
     (.hsingle p m)
     fun _ => .hsingle p (m + 1 : Int)
 :=
-  let s : Heap := {(p, .int m)}
+  let s : Heap := {(p, Val.int m)}
   let f : Val := .fun .q <| .app incr p
   fun
   | _, rfl => .app₁ (fun v h => v = f ∧ h = s) id (.app_fun <| .fun ⟨rfl, rfl⟩) fun
-  | _, _, ⟨rfl, rfl⟩ => .app_fun <| triple_incr _ _ _ <| show s = {(p, .int m)} from rfl
+  | _, _, ⟨rfl, rfl⟩ => .app_fun <| triple_incr _ _ _ rfl
 
 /-- `triple_incr_first_derived` -/
 example (p q : Loc) (m n : Int) :
@@ -409,7 +413,7 @@ example (p q : Loc) (m n : Int) :
     fun _ => .hsingle p (m + 1 : Int) * .hsingle q n
 :=
   fun
-  | _, ⟨_, _, h₁, h₂, h, rfl⟩ => .frame₁ h h₂ <| triple_incr_first' _ _ _ _ h₁
+  | _, ⟨_, _, rfl, rfl, h, rfl⟩ => .frame₁ h rfl <| triple_incr_first' _ _ _ _ rfl
 
 def transfer : Val :=
   .fun .p <| .fun .q <|
@@ -425,57 +429,43 @@ theorem triple_transfer (p q : Loc) (m n : Int) :
     fun _ => .hsingle p (m + n) * .hsingle q (0 : Int)
 :=
   let k : Int := m + n
-  let Q _ := .hsingle p k * .hsingle q (0 : Int)
+  let Q _ := HProp.hsingle p k * HProp.hsingle q (Val.int 0)
+  let s₁ : Heap := {(p, Val.int m)}
+  let s₂ : Heap := {(q, Val.int n)}
+  let s : Heap := s₁ ∪ s₂
   fun
-  | _, ⟨s₁, s₂, h₁, h₂, h, rfl⟩ => show Eval Q (.app (.app transfer p) q) (s₁ ∪ s₂) from
+  | _, ⟨_, _, rfl, rfl, h, rfl⟩ => show Eval Q (.app (.app transfer p) q) s from
   let t := .let .m (.get p) <| .let .n (.get .q) <| .let .s (.m + .n) <| .seq (.set p .s) (.set .q 0)
-  .app₁ (fun v s => v = Val.fun .q t ∧ s = s₁ ∪ s₂) id (.app_fun <| .fun ⟨rfl, rfl⟩) fun
-  | _, _, ⟨rfl, rfl⟩ => show Eval Q (.app (Val.fun .q t) q) (s₁ ∪ s₂) from
+  .app₁ (fun v h => v = Val.fun .q t ∧ h = s) id (.app_fun <| .fun ⟨rfl, rfl⟩) fun
+  | _, _, ⟨rfl, rfl⟩ => show Eval Q (.app (Val.fun .q t) q) s from
   let t := .let .m (.get p) <| .let .n (.get q) <| .let .s (.m + .n) <| .seq (.set p .s) (.set q 0)
-  suffices Eval Q t (s₁ ∪ s₂) from .app_fun this
-  .let (fun v => .hpure (v = m) * .hsingle p m * .hsingle q n) (.frame₁ h h₂ <|
-    have m₁ : p ∈ s₁ := h₁ ▸ Heap.singleton_mem
-    have g₁ : s₁.get p m₁ = m := h₁ ▸ Heap.singleton_get
-    .get m₁ ⟨∅, s₁, ⟨g₁, rfl⟩, h₁, s₁.empty_disjoint, s₁.empty_union⟩
+  suffices Eval Q t s from .app_fun this
+  .let (fun v h => v = m ∧ h = s) (.get (Heap.mem_union_of_left Heap.singleton_mem)
+    ⟨Heap.union_get_left_of_disjoint h Heap.singleton_mem |>.trans Heap.singleton_get, rfl⟩
   ) fun
-  | v, _, ⟨_, s₂, ⟨empty, s₁, hempty, h₁, _, rfl⟩, h₂, h, rfl⟩ =>
-  match v, empty, (hempty : ∃ x : v = m, HProp.hempty empty) with
   | _, _, ⟨rfl, rfl⟩ =>
-  have h : Disjoint s₁ s₂ := s₁.empty_union ▸ h
-  let t := .let .n (.get q) <| .let .s (m + .n) <| .seq (.set p .s) (.set q 0)
-  show Eval Q t (∅ ∪ s₁ ∪ s₂) from
-  suffices Eval Q t (s₁ ∪ s₂) from s₁.empty_union ▸ this
-  .let (fun v => .hsingle p m * (.hpure (v = n) * .hsingle q n)) (.frame₂ h h₁ <|
-    have m₂ : q ∈ s₂ := h₂ ▸ Heap.singleton_mem
-    have g₂ : s₂.get q m₂ = n := h₂ ▸ Heap.singleton_get
-    .get m₂ ⟨∅, s₂, ⟨g₂, rfl⟩, h₂, s₂.empty_disjoint, s₂.empty_union⟩
+  show Eval Q (.let .n (.get q) <| .let .s (m + .n) <| .seq (.set p .s) (.set q 0)) s from
+  .let (fun v h => v = n ∧ h = s) (.get (Heap.mem_union_of_right Heap.singleton_mem)
+    ⟨Heap.union_get_right Heap.singleton_mem |>.trans Heap.singleton_get, rfl⟩
   ) fun
-  | v, _, ⟨s₁, _, h₁, ⟨empty, s₂, hempty, h₂, _, rfl⟩, h, rfl⟩ =>
-  match v, empty, hempty with
   | _, _, ⟨rfl, rfl⟩ =>
-  have h : Disjoint s₁ s₂ := s₂.empty_union ▸ h
-  let t := .let .s (m + n) <| .seq (.set p .s) (.set q 0)
-  show Eval Q t (s₁ ∪ (∅ ∪ s₂)) from
-  suffices Eval Q t (s₁ ∪ s₂) from s₂.empty_union ▸ this
-  .let (fun v s => v = k ∧ s = s₁ ∪ s₂) (.add ⟨rfl, rfl⟩) fun
+  show Eval Q (.let .s (m + n) <| .seq (.set p .s) (.set q 0)) s from
+  .let (fun v h => v = k ∧ h = s) (.add ⟨rfl, rfl⟩) fun
   | _, _, ⟨rfl, rfl⟩ =>
-  let t := .seq (.set p k) (.set q 0)
-  show Eval Q t (s₁ ∪ s₂) from
-  .seq (fun _ => .hsingle p k * .hsingle q n) (
-    match s₁, h₁, h with
-    | _, rfl, h => .frame₁ h h₂ <| .set Heap.singleton_mem Heap.singleton_insert
+  show Eval Q (.seq (.set p k) (.set q 0)) s from
+  .seq (fun _ => HProp.hsingle p k * HProp.hsingle q n) (
+    .frame₁ h rfl <| .set Heap.singleton_mem Heap.singleton_insert
   ) fun
-  | _, _, ⟨s₁, s₂, h₁, h₂, h, rfl⟩ =>
-  show Eval Q (.set q 0) (s₁ ∪ s₂) from
-  match s₂, h₂, h with
-  | _, rfl, h => .frame₂ h h₁ <| .set Heap.singleton_mem Heap.singleton_insert
+  | _, _, ⟨_, _, rfl, rfl, h, rfl⟩ =>
+  show Eval Q (.set q 0) ({(p, Val.int k)} ∪ s₂) from
+  .frame₂ h rfl <| .set Heap.singleton_mem Heap.singleton_insert
 
 theorem triple_transfer_aliased (p : Loc) (m : Int) :
   Triple (.app (.app transfer p) p)
     (.hsingle p m)
     fun _ => .hsingle p (0 : Int)
 :=
-  let s : Heap := {(p, .int m)}
+  let s : Heap := {(p, Val.int m)}
   let f : Val := .fun .q <|
     .let .m (.get p) <|
     .let .n (.get .q) <|
@@ -483,13 +473,13 @@ theorem triple_transfer_aliased (p : Loc) (m : Int) :
     .seq (.set p .s) (.set .q 0)
   fun
   | _, rfl => .app₁ (fun v h => v = f ∧ h = s) id (.app_fun <| .fun ⟨rfl, rfl⟩) fun
-  | _, _, ⟨rfl, rfl⟩ =>
-  .app_fun <| .let (fun v h => v = m ∧ h = s) (.get Heap.singleton_mem ⟨Heap.singleton_get, rfl⟩) fun
+  | _, _, ⟨rfl, rfl⟩ => .app_fun <|
+  .let (fun v h => v = m ∧ h = s) (.get Heap.singleton_mem ⟨Heap.singleton_get, rfl⟩) fun
   | _, _, ⟨rfl, rfl⟩ =>
   .let (fun v h => v = m ∧ h = s) (.get Heap.singleton_mem ⟨Heap.singleton_get, rfl⟩) fun
   | _, _, ⟨rfl, rfl⟩ => .let (fun v h => v = m + m ∧ h = s) (.add ⟨rfl, rfl⟩) fun
   | _, _, ⟨rfl, rfl⟩ =>
-  .seq (fun _ => .hsingle p (m + m)) (.set Heap.singleton_mem Heap.singleton_insert) fun
+  .seq (fun _ => HProp.hsingle p (m + m)) (.set Heap.singleton_mem Heap.singleton_insert) fun
   | _, _, rfl => .set Heap.singleton_mem Heap.singleton_insert
 
 end Basic
