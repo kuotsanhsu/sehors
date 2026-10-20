@@ -37,7 +37,12 @@ inductive Trm
   | add : Trm → Trm → Trm
   | sub : Trm → Trm → Trm
   | mul : Trm → Trm → Trm
+  | eq  : Trm → Trm → Trm
+  | ne  : Trm → Trm → Trm
   | le  : Trm → Trm → Trm
+  | lt  : Trm → Trm → Trm
+  | ge  : Trm → Trm → Trm
+  | gt  : Trm → Trm → Trm
 end
 
 instance : Coe Unit Val where coe _ := Val.unit
@@ -74,6 +79,12 @@ theorem singleton_insert : ({(p, v)} : Heap).insert p w = {(p, w)} :=
      _ = if _ then some v else s[k]? := Std.ExtTreeMap.getElem?_insert
      _ = s[k]? := ite_eq_right hn
    _ = {(p, w)}[k]? := Std.ExtTreeMap.getElem?_insert.symm
+theorem singleton_inj (h : @Eq Heap {(p, v)} {(p, w)}) : v = w :=
+  Option.some.inj <|
+    calc some v
+    _ = ({(p, v)} : Heap)[p]? := Std.ExtTreeMap.getElem?_insert_self.symm
+    _ = ({(p, w)} : Heap)[p]? := h ▸ rfl
+    _ = some w := Std.ExtTreeMap.getElem?_insert_self
 
 variable {s₁ s₂ : Heap}
 theorem union_get_left_of_disjoint (h : Disjoint s₁ s₂) (m : p ∈ s₁) :
@@ -197,7 +208,12 @@ def subst : Trm → Trm
   | add lhs rhs => add lhs.subst rhs.subst
   | sub lhs rhs => sub lhs.subst rhs.subst
   | mul lhs rhs => mul lhs.subst rhs.subst
+  | eq  lhs rhs => eq  lhs.subst rhs.subst
+  | ne  lhs rhs => ne  lhs.subst rhs.subst
   | le  lhs rhs => le  lhs.subst rhs.subst
+  | lt  lhs rhs => lt  lhs.subst rhs.subst
+  | ge  lhs rhs => ge  lhs.subst rhs.subst
+  | gt  lhs rhs => gt  lhs.subst rhs.subst
 
 end Trm
 
@@ -210,7 +226,12 @@ inductive Eval : (Val → HProp) → Trm → HProp
   | add      {     s Q} {m n : Int} :        Q (m + n)        s  → Eval Q (.add m n)             s
   | sub      {     s Q} {m n : Int} :        Q (m - n)        s  → Eval Q (.sub m n)             s
   | mul      {     s Q} {m n : Int} :        Q (m * n)        s  → Eval Q (.mul m n)             s
+  | eq       {     s Q} {m n : Int} :        Q (m.beq' n)     s  → Eval Q (.eq  m n)             s
+  | ne       {     s Q} {m n : Int} :        Q (m.beq' n).not s  → Eval Q (.ne  m n)             s
   | le       {     s Q} {m n : Int} :        Q (m.ble' n)     s  → Eval Q (.le  m n)             s
+  | lt       {     s Q} {m n : Int} :        Q (m.blt' n)     s  → Eval Q (.lt  m n)             s
+  | ge       {     s Q} {m n : Int} :        Q (n.ble' m)     s  → Eval Q (.ge  m n)             s
+  | gt       {     s Q} {m n : Int} :        Q (n.blt' m)     s  → Eval Q (.gt  m n)             s
   | fun      {t    s Q x}           :        Q (.fun   x   t) s  → Eval Q (.fun x t)             s
   | fix      {t f  s Q x}           :        Q (.fix f x   t) s  → Eval Q (.fix f x t)           s
   | if       {t f  s Q}   {c : Bool}:   Eval Q (cond c t f)   s  → Eval Q (.if c t f)            s
@@ -218,13 +239,13 @@ inductive Eval : (Val → HProp) → Trm → HProp
   | app_fix  {t f  s Q x} {v : Val} :
     Eval Q (.subst x v (.subst f (.fix f x t) t)) s → Eval Q (.app (Val.fix f x t) v) s
   | app₁ Q'  {t t' s Q} (hn : ¬t'.IsVal) :
-    Eval Q'     t' s → (∀ v s, Q' v s → Eval Q (.app     v t) s) → Eval Q (t'.app   t)           s
-  | app₂ Q'  {t t' s Q} (hn : ¬t.IsVal) :
-    Eval Q'   t    s → (∀ v s, Q' v s → Eval Q (.app  t' v  ) s) → Eval Q (t'.app   t)           s
+    Eval Q'     t' s → (∀ v s, Q' v s → Eval Q (.app     v t) s) → Eval Q (.app   t' t)          s
+  | app₂ Q'  {t    s Q} {f : Val} (hn : ¬t.IsVal) :
+    Eval Q'   t    s → (∀ v s, Q' v s → Eval Q (.app   f v  ) s) → Eval Q (.app f    t)          s
   | let  Q'  {t t' s Q x} :
-    Eval Q'     t' s → (∀ v s, Q' v s → Eval Q (.subst x v t) s) → Eval Q (t'.let x t)           s
+    Eval Q'     t' s → (∀ v s, Q' v s → Eval Q (.subst x v t) s) → Eval Q (.let x t' t)          s
   | seq  Q'  {t t' s Q} :
-    Eval Q'     t' s → (∀ v s, Q' v s → Eval Q             t  s) → Eval Q (t'.seq   t)           s
+    Eval Q'     t' s → (∀ v s, Q' v s → Eval Q             t  s) → Eval Q (.seq   t' t)          s
   | get {p : Loc} {s Q} (m : p ∈ s) :        Q (s.get p m)    s  → Eval Q (.get p)               s
   | set {p : Loc} {s Q} (m : p ∈ s) {v : Val} : Q () (s.insert p v) → Eval Q (.set p v)          s
 
@@ -235,7 +256,12 @@ theorem frame₁ {s₁ s₂ t Q H₂} (q : Disjoint s₁ s₂) (h₂ : H₂ s₂
   |  add h₁ =>  add ⟨s₁, s₂, h₁, h₂, q, rfl⟩
   |  sub h₁ =>  sub ⟨s₁, s₂, h₁, h₂, q, rfl⟩
   |  mul h₁ =>  mul ⟨s₁, s₂, h₁, h₂, q, rfl⟩
+  |   eq h₁ =>   eq ⟨s₁, s₂, h₁, h₂, q, rfl⟩
+  |   ne h₁ =>   ne ⟨s₁, s₂, h₁, h₂, q, rfl⟩
   |   le h₁ =>   le ⟨s₁, s₂, h₁, h₂, q, rfl⟩
+  |   lt h₁ =>   lt ⟨s₁, s₂, h₁, h₂, q, rfl⟩
+  |   ge h₁ =>   ge ⟨s₁, s₂, h₁, h₂, q, rfl⟩
+  |   gt h₁ =>   gt ⟨s₁, s₂, h₁, h₂, q, rfl⟩
   | .fun h₁ => .fun ⟨s₁, s₂, h₁, h₂, q, rfl⟩
   |  fix h₁ =>  fix ⟨s₁, s₂, h₁, h₂, q, rfl⟩
   | .if       e₁   => .if       (e₁.frame₁ q h₂)
@@ -254,6 +280,57 @@ theorem frame₂ {s₁ s₂ t Q H₁} (q : Disjoint s₁ s₂) (h₁ : H₁ s₁
     rw [Heap.union_comm_of_disjoint q]
     show Eval (fun v => Q v * H₁) t (s₂ ∪ s₁)
     exact e₂.frame₁ q.symm h₁
+theorem eventually {s t Q} : Eval Q t s → ∃ v s, Q v s
+  |  val       h
+  |  add       h
+  |  sub       h
+  |  mul       h
+  |   eq       h
+  |   ne       h
+  |   le       h
+  |   lt       h
+  |   ge       h
+  |   gt       h
+  | .fun       h
+  |  fix       h
+  |  get _     h
+  |  set _     h => ⟨_, _, h⟩
+  | app₁ _ _ e h
+  | app₂ _ _ e h
+  | .let   _ e h
+  |  seq   _ e h => match e.eventually with | ⟨v, s, q⟩ => (h v s q).eventually
+  |      .if e
+  |  app_fun e
+  |  app_fix e => e.eventually
+theorem and {s t Q₁ Q₂} : Eval Q₁ t s → Eval Q₂ t s → Eval (fun v s => Q₁ v s ∧ Q₂ v s) t s
+  |   val h₁,   val h₂ =>   val ⟨h₁, h₂⟩
+  |   add h₁,   add h₂ =>   add ⟨h₁, h₂⟩
+  |   sub h₁,   sub h₂ =>   sub ⟨h₁, h₂⟩
+  |   mul h₁,   mul h₂ =>   mul ⟨h₁, h₂⟩
+  |    eq h₁,    eq h₂ =>    eq ⟨h₁, h₂⟩
+  |    ne h₁,    ne h₂ =>    ne ⟨h₁, h₂⟩
+  |    le h₁,    le h₂ =>    le ⟨h₁, h₂⟩
+  |    lt h₁,    lt h₂ =>    lt ⟨h₁, h₂⟩
+  |    ge h₁,    ge h₂ =>    ge ⟨h₁, h₂⟩
+  |    gt h₁,    gt h₂ =>    gt ⟨h₁, h₂⟩
+  |  .fun h₁,  .fun h₂ =>  .fun ⟨h₁, h₂⟩
+  |   fix h₁,   fix h₂ =>   fix ⟨h₁, h₂⟩
+  | get m h₁, get _ h₂ => get m ⟨h₁, h₂⟩
+  | set m h₁, set _ h₂ => set m ⟨h₁, h₂⟩
+  |     .if e₁,     .if e₂ =>     .if (e₁.and e₂)
+  | app_fun e₁, app_fun e₂ => app_fun (e₁.and e₂)
+  | app_fix e₁, app_fix e₂ => app_fix (e₁.and e₂)
+  | app₁ _ hn e₁ k₁, app₁ _ _ e₂ k₂ => app₁ _ hn (e₁.and e₂) fun v s ⟨h₁, h₂⟩ => (k₁ v s h₁).and (k₂ v s h₂)
+  | app₂ _ hn e₁ k₁, app₂ _ _ e₂ k₂ => app₂ _ hn (e₁.and e₂) fun v s ⟨h₁, h₂⟩ => (k₁ v s h₁).and (k₂ v s h₂)
+  | .let _    e₁ k₁, .let   _ e₂ k₂ => .let _    (e₁.and e₂) fun v s ⟨h₁, h₂⟩ => (k₁ v s h₁).and (k₂ v s h₂)
+  |  seq _    e₁ k₁,  seq   _ e₂ k₂ =>  seq _    (e₁.and e₂) fun v s ⟨h₁, h₂⟩ => (k₁ v s h₁).and (k₂ v s h₂)
+  | app₁ _ hn .., app_fun _ | app_fun _, app₁ _ hn ..
+  | app₂ _ hn .., app_fun _ | app_fun _, app₂ _ hn ..
+  | app₁ _ hn .., app_fix _ | app_fix _, app₁ _ hn ..
+  | app₂ _ hn .., app_fix _ | app_fix _, app₂ _ hn ..
+  | app₁ _ hn .., app₂ ..   | app₂ ..  , app₁ _ hn .. => (hn trivial).rec
+theorem and_eventually {s t Q₁ Q₂} : Eval Q₁ t s → Eval Q₂ t s → ∃ v s, Q₁ v s ∧ Q₂ v s
+  | e₁, e₂ => (e₁.and e₂).eventually
 
 end Eval
 
@@ -577,6 +654,166 @@ theorem triple_factorec (n : Int) (h : n ≥ 0) :
     .let (fun r => HProp.hpure (r = facto x)) (triple_factorec x hx ∅ rfl) fun
     | _, _, ⟨rfl, rfl⟩ =>
     .mul ⟨congrArg Val.int (facto_succ hx).symm, rfl⟩
+termination_by n.toNat
+
+def repeat_incr : Val :=
+  .fix .f .p <| .fun .n <|
+    .let .b (.gt .n 0) <|
+    .if .b (
+   Trm.app incr .p |>.seq <|
+      .let .x (.n - 1) <|
+      .app (.app .f .p) .x
+    ) ()
+
+/-- Originally, `triple_repeat_incr'`. -/
+theorem triple_repeat_incr (p : Loc) (m n : Int) (h : n ≥ 0) :
+  Triple (.app (.app repeat_incr p) n)
+    (.hsingle p m)
+    fun _ => .hsingle p (m + n)
+:=
+  let s : Heap := {(p, Val.int m)}
+  let g : Val :=
+    .fun .n <|
+      .let .b (.gt .n 0) <|
+      .if .b (
+        .seq (.app incr p) <|
+        .let .x (.n - 1) <|
+        .app (.app repeat_incr p) .x
+      ) ()
+  fun
+  | _, rfl => .app₁ (fun v h => v = g ∧ h = s) id (.app_fix <| .fun ⟨rfl, rfl⟩) fun
+  | _, _, ⟨rfl, rfl⟩ => .app_fun <|
+  match n, h with
+  | 0, _ => .let (fun v h => v = false ∧ h = s) (.gt ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ => .if <| .val <| m.add_zero.symm ▸ rfl
+  | (n + 1 : Nat), h => .let (fun v h => v = true ∧ h = s) (.gt ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ => .if <| .seq _ (triple_incr p m s rfl) fun
+    | _, _, rfl =>
+    let s : Heap := {(p, Val.int (m + 1))}
+    let n : Int := n
+    .let (fun v h => v = n ∧ h = s) (.sub ⟨congrArg Val.int (n.add_sub_cancel 1), rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ =>
+    show Eval (fun _ => HProp.hsingle p (m + (n + 1))) (.app (.app repeat_incr p) n) s from
+    have : m + 1 + n = m + (n + 1) := by ac_nf
+    this ▸ triple_repeat_incr p (m + 1) n ⟨n.toNat⟩ s rfl
+termination_by n.toNat
+
+/-- Originally, `triple_repeat_incr`. -/
+example (m n : Int) (p : Loc) (h : m ≥ 0) :
+  Triple (.app (.app repeat_incr p) m)
+    (.hsingle p n)
+    fun _ => .hsingle p (n + m)
+:=
+  triple_repeat_incr p n m h
+
+/-- Originally, `triple_repeat_incr_incorrect`. -/
+example (p : Loc) (m : Int) : ¬∀ n : Int,
+  Triple (.app (.app repeat_incr p) n)
+    (.hsingle p m)
+    fun _ => .hsingle p (m + n)
+:=
+  fun h =>
+  let s : Heap := {(p, Val.int m)}
+  let t : Trm := .app (.app repeat_incr p) (-1 : Int)
+  have e : Eval (fun _ => .hsingle p (m - 1 : Int)) t s := h (-1) s rfl
+  have e' : Eval (fun _ => .hsingle p m) t s :=
+    let g : Val := .fun .n <| .let .b (.gt .n 0) <| .if .b _ ()
+    .app₁ (fun v h => v = g ∧ h = s) id (.app_fix <| .fun ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ => .app_fun <| .let (fun v h => v = false ∧ h = s) (.gt ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ => .if <| .val rfl
+  match e.and_eventually e' with
+  | ⟨_, _, rfl, e⟩ => Int.ne_of_lt (m.sub_lt_self ⟨0⟩) <| Val.int.inj <| Heap.singleton_inj e
+
+/-- Originally, `max_l`. -/
+example (m n : Int) : m ≥ n → max m n = m := Int.max_eq_left
+
+/-- Originally, `max_r`. -/
+example (m n : Int) : m ≤ n → max m n = n := Int.max_eq_right
+
+theorem triple_repeat_incr' (p : Loc) (m n : Int) :
+  Triple (.app (.app repeat_incr p) n)
+    (.hsingle p m)
+    fun _ => .hsingle p (m + max 0 n)
+:=
+  match n with
+  | Int.ofNat n => triple_repeat_incr p m (Int.ofNat n) ⟨n⟩
+  | Int.negSucc _ =>
+    let s : Heap := {(p, Val.int m)}
+    let g : Val := .fun .n <| .let .b (.gt .n 0) <| .if .b _ ()
+    fun
+    | _, rfl => .app₁ (fun v h => v = g ∧ h = s) id (.app_fix <| .fun ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ => .app_fun <| .let (fun v h => v = false ∧ h = s) (.gt ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ => .if <| .val <| m.add_zero.symm ▸ rfl
+
+def decr : Val :=
+  .fun .p <|
+    .let .n (.get .p) <|
+    .let .m (.n - 1) <|
+    .set .p .m
+
+theorem triple_decr (p : Loc) (n : Int) :
+  Triple (.app decr p)
+    (.hsingle p n)
+    fun _ => .hsingle p (n - 1 : Int)
+:=
+  let s : Heap := {(p, Val.int n)}
+  fun
+  | _, rfl => .app_fun <|
+  .let (fun v h => v = n ∧ h = s) (.get Heap.singleton_mem ⟨Heap.singleton_get, rfl⟩) fun
+  | _, _, ⟨rfl, rfl⟩ => .let (fun v h => v = (n - 1 : Int) ∧ h = s) (.sub ⟨rfl, rfl⟩) fun
+  | _, _, ⟨rfl, rfl⟩ => .set Heap.singleton_mem Heap.singleton_insert
+
+def step_transfer : Val :=
+  .fix .f .p <| .fun .q <|
+    .let .n (.get .q) <|
+    .let .b (.gt .n 0) <|
+    .if .b (
+   Trm.app incr .p |>.seq <|
+   Trm.app decr .q |>.seq <|
+      .app (.app .f .p) .q
+    ) ()
+
+theorem triple_step_transfer (p q : Loc) (m n : Int) (hn : n ≥ 0) :
+  Triple (.app (.app step_transfer p) q)
+    (.hsingle p m * .hsingle q n)
+    fun _ => .hsingle p (m + n) * .hsingle q (0 : Int)
+:=
+  let s : Heap := {(p, Val.int m)} ∪ {(q, Val.int n)}
+  let g : Val :=
+    .fun .q <|
+      .let .n (.get .q) <|
+      .let .b (.gt .n 0) <|
+      .if .b (
+        .seq (.app incr p) <|
+        .seq (.app decr .q) <|
+              .app (.app step_transfer p) .q
+      ) ()
+  fun
+  | _, ⟨_, _, rfl, rfl, h, rfl⟩ => .app₁ (fun v h => v = g ∧ h = s) id (.app_fix <| .fun ⟨rfl, rfl⟩) fun
+  | _, _, ⟨rfl, rfl⟩ => .app_fun <| .let (fun v h => v = n ∧ h = s) (
+    .get (Heap.mem_union_of_right Heap.singleton_mem)
+      ⟨Heap.union_get_right Heap.singleton_mem |>.trans Heap.singleton_get, rfl⟩
+  ) fun
+  | _, _, ⟨rfl, rfl⟩ =>
+  match e : n with
+  | 0 =>
+    .let (fun v h => v = false ∧ h = s) (.gt ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ => .if <| .val <|
+    suffices HProp.hsingle p m * HProp.hsingle q (0 : Int) <| _ from m.add_zero.symm ▸ this
+    ⟨_, _, rfl, rfl, h, e ▸ rfl⟩
+  | (k + 1 : Nat) => .let (fun v h => v = true ∧ h = s) (.gt ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ => .if <| .seq _ (.frame₁ h rfl <| triple_incr _ _ _ rfl) fun
+    | _, _, ⟨_, _, rfl, rfl, _, rfl⟩ => .seq _ (.frame₂ h rfl <| triple_decr _ _ _ rfl) fun
+    | _, _, ⟨_, _, rfl, rfl, _, rfl⟩ =>
+    let t : Trm := .app (.app step_transfer p) q
+    let H₂ : HProp := HProp.hsingle q (0 : Int)
+    let s₁ : Heap := {(p, Val.int (m + 1))}
+    show Eval (fun _ => HProp.hsingle p (m + (k + 1 : Int)) * H₂) t <| s₁ ∪ {(q, Val.int (n - 1))} from
+    suffices Eval (fun _ => HProp.hsingle p (m + 1 + k : Int) * H₂) t <| s₁ ∪ {(q, Val.int k)} by
+      have e₁ : m + (k + 1) = m + 1 + k := by ac_rfl
+      have e₂ : n - 1 = k := by lia
+      rw [e₁, e₂]; exact this
+    triple_step_transfer p q (m + 1) k ⟨k⟩ _ ⟨_, _, rfl, rfl, h, rfl⟩
 termination_by n.toNat
 
 end Basic
