@@ -1,4 +1,5 @@
 import SoftwareFoundations.SLF.StdExtra
+set_option linter.constructorNameAsVariable false
 /-
 Does not cover CFML which applies separation logic to reasoning about OCaml programs.
 Prerequisites: volume 1, Hoare and Hoare2 from volume 2.
@@ -9,31 +10,38 @@ section LibSepReference
 abbrev Loc := Nat
 
 inductive Var
-  | a | b | m | n | p | q | s
+  | a | b | f | m | n | p | q | s | x | y
 deriving DecidableEq
 
 mutual
 inductive Val
   | unit
+  | bool : Bool → Val
   | int : Int → Val
   | loc : Loc → Val
   | fun : Var → Trm → Val
+  | fix : Var → Var → Trm → Val
 
 inductive Trm
   | val : Val → Trm
   | var : Var → Trm
   | fun : Var → Trm → Trm
+  | fix : Var → Var → Trm → Trm
   | app : Trm → Trm → Trm
   | seq : Trm → Trm → Trm
   | let : Var → Trm → Trm → Trm
+  | if  : Trm → Trm → Trm → Trm
   -- Prim
   | get (p : Trm) : Trm
   | set (p v : Trm) : Trm
   | add : Trm → Trm → Trm
   | sub : Trm → Trm → Trm
+  | mul : Trm → Trm → Trm
+  | le  : Trm → Trm → Trm
 end
 
 instance : Coe Unit Val where coe _ := Val.unit
+instance : Coe Bool Val where coe := Val.bool
 instance : Coe Int Val where coe := Val.int
 instance : Coe Loc Val where coe := Val.loc
 instance : Coe Val Trm where coe := Trm.val
@@ -178,14 +186,18 @@ def subst : Trm → Trm
   | t@(val _) => t
   | t@(var x) => if x = y then v else t
   | t@(.fun x body) => if x = y then t else .fun x body.subst
+  | t@(fix f x body) => if f = y ∨ x = y then t else fix f x body.subst
   | app fn arg => app fn.subst arg.subst
   | .let x rhs scope => .let x rhs.subst <| if x = y then scope else scope.subst
+  | .if c t f => .if c.subst t.subst f.subst
   | seq fst snd => seq fst.subst snd.subst
   -- Prim
   | get src => get src.subst
   | set dst src => set dst.subst src.subst
   | add lhs rhs => add lhs.subst rhs.subst
   | sub lhs rhs => sub lhs.subst rhs.subst
+  | mul lhs rhs => mul lhs.subst rhs.subst
+  | le  lhs rhs => le  lhs.subst rhs.subst
 
 end Trm
 
@@ -197,10 +209,18 @@ inductive Eval : (Val → HProp) → Trm → HProp
   | val      {     s Q}   {v : Val} :        Q  v             s  → Eval Q  v                     s
   | add      {     s Q} {m n : Int} :        Q (m + n)        s  → Eval Q (.add m n)             s
   | sub      {     s Q} {m n : Int} :        Q (m - n)        s  → Eval Q (.sub m n)             s
+  | mul      {     s Q} {m n : Int} :        Q (m * n)        s  → Eval Q (.mul m n)             s
+  | le       {     s Q} {m n : Int} :        Q (m.ble' n)     s  → Eval Q (.le  m n)             s
   | fun      {t    s Q x}           :        Q (.fun   x   t) s  → Eval Q (.fun x t)             s
+  | fix      {t f  s Q x}           :        Q (.fix f x   t) s  → Eval Q (.fix f x t)           s
+  | if       {t f  s Q}   {c : Bool}:   Eval Q (cond c t f)   s  → Eval Q (.if c t f)            s
   | app_fun  {t    s Q x} {v : Val} :   Eval Q (.subst x v t) s  → Eval Q (.app (Val.fun x t) v) s
+  | app_fix  {t f  s Q x} {v : Val} :
+    Eval Q (.subst x v (.subst f (.fix f x t) t)) s → Eval Q (.app (Val.fix f x t) v) s
   | app₁ Q'  {t t' s Q} (hn : ¬t'.IsVal) :
     Eval Q'     t' s → (∀ v s, Q' v s → Eval Q (.app     v t) s) → Eval Q (t'.app   t)           s
+  | app₂ Q'  {t t' s Q} (hn : ¬t.IsVal) :
+    Eval Q'   t    s → (∀ v s, Q' v s → Eval Q (.app  t' v  ) s) → Eval Q (t'.app   t)           s
   | let  Q'  {t t' s Q x} :
     Eval Q'     t' s → (∀ v s, Q' v s → Eval Q (.subst x v t) s) → Eval Q (t'.let x t)           s
   | seq  Q'  {t t' s Q} :
@@ -214,9 +234,15 @@ theorem frame₁ {s₁ s₂ t Q H₂} (q : Disjoint s₁ s₂) (h₂ : H₂ s₂
   |  val h₁ =>  val ⟨s₁, s₂, h₁, h₂, q, rfl⟩
   |  add h₁ =>  add ⟨s₁, s₂, h₁, h₂, q, rfl⟩
   |  sub h₁ =>  sub ⟨s₁, s₂, h₁, h₂, q, rfl⟩
+  |  mul h₁ =>  mul ⟨s₁, s₂, h₁, h₂, q, rfl⟩
+  |   le h₁ =>   le ⟨s₁, s₂, h₁, h₂, q, rfl⟩
   | .fun h₁ => .fun ⟨s₁, s₂, h₁, h₂, q, rfl⟩
+  |  fix h₁ =>  fix ⟨s₁, s₂, h₁, h₂, q, rfl⟩
+  | .if       e₁   => .if       (e₁.frame₁ q h₂)
   | app_fun   e₁   => app_fun   (e₁.frame₁ q h₂)
+  | app_fix   e₁   => app_fix   (e₁.frame₁ q h₂)
   | app₁ _ hn e₁ h => app₁ _ hn (e₁.frame₁ q h₂) fun | v, _, ⟨s₁, _, h₁, h₂, q, rfl⟩ => (h v s₁ h₁).frame₁ q h₂
+  | app₂ _ hn e₁ h => app₂ _ hn (e₁.frame₁ q h₂) fun | v, _, ⟨s₁, _, h₁, h₂, q, rfl⟩ => (h v s₁ h₁).frame₁ q h₂
   | .let _    e₁ h => .let _    (e₁.frame₁ q h₂) fun | v, _, ⟨s₁, _, h₁, h₂, q, rfl⟩ => (h v s₁ h₁).frame₁ q h₂
   | seq  _    e₁ h => seq  _    (e₁.frame₁ q h₂) fun | v, _, ⟨s₁, _, h₁, h₂, q, rfl⟩ => (h v s₁ h₁).frame₁ q h₂
   | get m₁ h₁ => get (Heap.mem_union_of_left m₁) ⟨s₁, s₂, Heap.union_get_left_of_disjoint q m₁ ▸ h₁, h₂, q, rfl⟩
@@ -240,8 +266,9 @@ namespace Trm
 instance {n} : OfNat Trm n where ofNat := Val.int n
 instance : Add Trm where add := add
 instance : Sub Trm where sub := sub
+instance : Mul Trm where mul := mul
 
-export Var (a b m n p q s)
+export Var (a b f m n p q s x y)
 
 end Trm
 
@@ -481,5 +508,75 @@ theorem triple_transfer_aliased (p : Loc) (m : Int) :
   | _, _, ⟨rfl, rfl⟩ =>
   .seq (fun _ => HProp.hsingle p (m + m)) (.set Heap.singleton_mem Heap.singleton_insert) fun
   | _, _, rfl => .set Heap.singleton_mem Heap.singleton_insert
+
+namespace Facto
+
+axiom facto : Int → Int
+variable {n : Int}
+-- axiom facto_init (h : 0 ≤ n ∧ n ≤ 1) : facto n = 1
+axiom facto_zero : facto 0 = 1
+axiom facto_step (h : 1 ≤ n) : facto n = n * facto (n - 1)
+
+theorem facto_one : facto 1 = 1 :=
+  calc facto 1
+   _ = 1 * facto 0 := facto_step ⟨0⟩
+   _ = 1 * 1 := congrArg _ facto_zero
+   _ = 1 := rfl
+theorem facto_two : facto 2 = 2 :=
+  calc facto 2
+   _ = 2 * facto 1 := facto_step ⟨1⟩
+   _ = 2 * 1 := congrArg _ facto_one
+   _ = 2 := rfl
+theorem facto_three : facto 3 = 6 :=
+  by simp [facto_step, facto_zero]
+theorem facto_succ (h : 0 ≤ n) : facto (n + 1) = (n + 1) * facto n :=
+  calc facto (n + 1)
+   _ = (n + 1) * facto (n + 1 - 1) := facto_step (Int.add_le_add_right h 1)
+   _ = (n + 1) * facto n := n.add_sub_cancel 1 |>.symm ▸ rfl
+
+end Facto
+
+def factorec : Val :=
+  .fix .f .n <|
+    .let .b (.le .n 1) <|
+    .if .b 1 <|
+      .let .x (.n - 1) <|
+      .let .y (.app .f .x) <|
+      .n * .y
+
+open Facto in
+theorem triple_factorec (n : Int) (h : n ≥ 0) :
+  Triple (.app factorec n)
+    .hempty
+    fun r => .hpure (r = facto n)
+:=
+  fun
+  | _, rfl => .app_fix <|
+  match n with
+  | Int.negSucc _ => nomatch h
+  | 0 => .let (fun v s => v = true ∧ s = ∅) (.le ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ =>
+    suffices Eval (fun r => HProp.hpure (r = facto 0)) 1 ∅ from .if this
+    .val ⟨congrArg Val.int facto_zero.symm, rfl⟩
+  | 1 => .let (fun v s => v = true ∧ s = ∅) (.le ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ =>
+    suffices Eval (fun r => HProp.hpure (r = facto 1)) 1 ∅ from .if this
+    .val ⟨congrArg Val.int facto_one.symm, rfl⟩
+  | Int.ofNat (n + 2) => .let (fun v s => v = false ∧ s = ∅) (.le ⟨rfl, rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ =>
+    let m : Int := n + 2
+    let x : Int := n + 1
+    let t : Trm :=
+        .let Var.x (m - 1) <|
+        .let Var.y (.app factorec Var.x) <|
+        m * Var.y
+    suffices Eval (fun r => HProp.hpure (r = facto m)) t ∅ from .if this
+    .let (fun v s => v = x ∧ s = ∅) (.sub ⟨congrArg Val.int (x.add_sub_cancel 1), rfl⟩) fun
+    | _, _, ⟨rfl, rfl⟩ =>
+    have hx : x ≥ 0 := ⟨n + 1⟩
+    .let (fun r => HProp.hpure (r = facto x)) (triple_factorec x hx ∅ rfl) fun
+    | _, _, ⟨rfl, rfl⟩ =>
+    .mul ⟨congrArg Val.int (facto_succ hx).symm, rfl⟩
+termination_by n.toNat
 
 end Basic
